@@ -1,0 +1,30 @@
+
+{
+  "name": "database",
+  "version": "1.0.0",
+  "description": "Database, persistence, encryption, and scheduled-message services for the Real-Time Chat Application",
+  "main": "src/config/db.js",
+  "scripts": {
+    "test": "npm run test:connection && npm run test:encryption && npm run test:persistence && npm run test:scheduled && npm run test:scheduled:failures && npm run test:scheduled:recovery",
+    "test:connection": "node test-connection.js",
+    "test:encryption": "node test-encryption.js",
+    "test:persistence": "node test-persistence.js",
+    "test:scheduled": "node test-scheduled-messages.js",
+    "test:scheduled:failures": "node test-scheduled-failures.js",
+    "test:scheduled:recovery": "node test-scheduled-recovery.js"
+  },
+  "keywords": [
+    "mongodb",
+    "mongoose",
+    "chat",
+    "persistence",
+    "message-encryption"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "mongoose": "^9.11.3"
+  }
+}
