@@ -799,3 +799,39 @@
     transition: none;
   }
 }
+
+.message-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #e9e7f0;
+}
+
+.message-search-bar input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #e2deed;
+  border-radius: 8px;
+  outline: none;
+  font: inherit;
+}
+
+.message-search-bar input:focus {
+  border-color: #7654d6;
+}
+
+.message-search-count {
+  color: #777185;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.search-highlight {
+  background-color: #ffe58a;
+  color: #332600;
+  border-radius: 3px;
+  padding: 0 2px;
+}

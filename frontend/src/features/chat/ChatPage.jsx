@@ -53,10 +53,12 @@ const initialConversations = [
   },
 ]
 
-function ChatPage() {
+function ChatPage({ onNavigate }) {
   const [conversations, setConversations] = useState(initialConversations)
   const [selectedId, setSelectedId] = useState(1)
   const [search, setSearch] = useState('')
+  const [showMessageSearch, setShowMessageSearch] = useState(false)
+  const [messageSearch, setMessageSearch] = useState('')
   const [message, setMessage] = useState('')
   const [showSchedule, setShowSchedule] = useState(false)
   const [scheduledText, setScheduledText] = useState('')
@@ -66,15 +68,39 @@ function ChatPage() {
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === selectedId,
   )
+  
+function highlightText(text, query) {
+  if (!query.trim()) return text
 
-  const filteredConversations = useMemo(
-    () =>
-      conversations.filter((conversation) =>
-        conversation.name.toLowerCase().includes(search.toLowerCase()),
-      ),
-    [conversations, search],
+  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const parts = text.split(new RegExp(`(${escapedQuery})`, 'gi'))
+
+  return parts.map((part, index) =>
+    part.toLowerCase() === query.toLowerCase() ? (
+      <mark key={index} className="search-highlight">
+        {part}
+      </mark>
+    ) : (
+      part
+    ),
   )
+}
 
+  const filteredConversations = useMemo(() => {
+  const query = search.trim().toLowerCase()
+
+  if (!query) return conversations
+
+  return conversations.filter((conversation) => {
+    const matchesName = conversation.name.toLowerCase().includes(query)
+
+    const matchesMessage = conversation.messages.some((item) =>
+      item.text.toLowerCase().includes(query),
+    )
+
+    return matchesName || matchesMessage
+  })
+}, [conversations, search])
   function selectConversation(id) {
     setSelectedId(id)
     setConversations((current) =>
@@ -83,6 +109,16 @@ function ChatPage() {
       ),
     )
   }
+  const filteredMessages = useMemo(() => {
+  const query = messageSearch.trim().toLowerCase()
+  const messages = selectedConversation?.messages ?? []
+
+  if (!query) return messages
+
+  return messages.filter((item) =>
+    item.text.toLowerCase().includes(query),
+  )
+}, [selectedConversation, messageSearch])
 
   function sendMessage(event) {
     event.preventDefault()
@@ -201,7 +237,11 @@ function ChatPage() {
                     <span className="conversation-time">{lastMessage?.time}</span>
                   </span>
                   <span className="conversation-bottomline">
-                    <span className="last-message">{lastMessage?.text}</span>
+                   
+<span className="last-message">
+  {highlightText(lastMessage?.text ?? '', search)}
+</span>
+
                     {conversation.unread > 0 && (
                       <span className="unread-count">{conversation.unread}</span>
                     )}
@@ -216,16 +256,32 @@ function ChatPage() {
           )}
         </nav>
 
-        <div className="sidebar-footer">
-          <span className="avatar profile-avatar">NS</span>
-          <span className="profile-details">
-            <strong>Your profile</strong>
-            <span>Available</span>
-          </span>
-          <button className="icon-button profile-menu" type="button" aria-label="Profile options">
-            ···
-          </button>
-        </div>
+        
+<div className="sidebar-footer">
+  <button
+    className="profile-footer-button"
+    type="button"
+    onClick={() => onNavigate?.('profile')}
+    aria-label="Open your profile"
+  >
+    <span className="avatar profile-avatar">NS</span>
+    <span className="profile-details">
+      <strong>Your profile</strong>
+      <span>Available</span>
+    </span>
+  </button>
+
+  <button
+    className="icon-button profile-menu"
+    type="button"
+    aria-label="Profile options"
+    title="Profile options"
+    onClick={() => onNavigate?.('profile')}
+  >
+    ···
+  </button>
+</div>
+
       </aside>
 
       <section className="chat-panel" aria-label="Chat">
@@ -250,15 +306,53 @@ function ChatPage() {
                 </div>
               </div>
               <div className="chat-actions">
-                <button className="icon-button" type="button" aria-label="Search messages" title="Search messages">⌕</button>
+               <button
+  className="icon-button"
+  type="button"
+  aria-label="Search messages"
+  title="Search messages"
+  onClick={() => {
+    setShowMessageSearch((current) => !current)
+    setMessageSearch('')
+  }}
+>
+  ⌕
+</button>
                 <button className="icon-button" type="button" aria-label="More conversation options" title="More options">···</button>
               </div>
             </header>
+            {showMessageSearch && (
+  <div className="message-search-bar">
+    <input
+      type="search"
+      value={messageSearch}
+      onChange={(event) => setMessageSearch(event.target.value)}
+      placeholder="Search in this chat..."
+      aria-label="Search within this conversation"
+      autoFocus
+    />
 
+    <span className="message-search-count">
+      {messageSearch.trim() ? filteredMessages.length : ''}
+    </span>
+
+    <button
+      type="button"
+      className="icon-button"
+      aria-label="Close message search"
+      onClick={() => {
+        setShowMessageSearch(false)
+        setMessageSearch('')
+      }}
+    >
+      ×
+    </button>
+  </div>
+)}
             <div className="message-area">
               <div className="date-divider"><span>TODAY</span></div>
 
-              {selectedConversation.messages.map((item) => (
+              {filteredMessages.map((item) => (
                 <div
                   className={`message-row ${item.sender === 'me' ? 'sent' : 'received'}`}
                   key={item.id}
@@ -279,6 +373,11 @@ function ChatPage() {
                   </div>
                 </div>
               ))}
+              {messageSearch.trim() && filteredMessages.length === 0 && (
+  <p className="empty-search">
+    No messages found in this conversation.
+  </p>
+)}
             </div>
 
             <div className="composer-section">
