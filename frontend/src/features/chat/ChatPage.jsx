@@ -1,6 +1,50 @@
 
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import './ChatPage.css'
+
+
+function createDemoTimestamp(daysAgo, hour, minute) {
+  const date = new Date()
+  date.setDate(date.getDate() - daysAgo)
+  date.setHours(hour, minute, 0, 0)
+  return date.toISOString()
+}
+
+function getMostRecentMondayOffset() {
+  return (new Date().getDay() + 6) % 7
+}
+
+function formatMessageTime(timestamp) {
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatDateLabel(timestamp) {
+  const date = new Date(timestamp)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(today.getDate() - 1)
+
+  const sameDay = (first, second) =>
+    first.getFullYear() === second.getFullYear() &&
+    first.getMonth() === second.getMonth() &&
+    first.getDate() === second.getDate()
+
+  if (sameDay(date, today)) return 'Today'
+  if (sameDay(date, yesterday)) return 'Yesterday'
+
+  return date.toLocaleDateString([], {
+    day: 'numeric',
+    month: 'long',
+    year: date.getFullYear() !== today.getFullYear()
+      ? 'numeric'
+      : undefined,
+  })
+}
+
+
 
 const initialConversations = [
   {
@@ -11,9 +55,24 @@ const initialConversations = [
     status: 'online',
     unread: 2,
     messages: [
-      { id: 101, text: 'Hey! Have you checked the project updates?', sender: 'them', time: '10:32 AM' },
-      { id: 102, text: 'Not yet, I was working on the chat interface.', sender: 'me', time: '10:34 AM' },
-      { id: 103, text: 'Perfect! Let me know when you are done.', sender: 'them', time: '10:35 AM' },
+      {
+        id: 101,
+        text: 'Hey! Have you checked the project updates?',
+        sender: 'them',
+        timestamp: createDemoTimestamp(0, 10, 32),
+      },
+      {
+        id: 102,
+        text: 'Not yet, I was working on the chat interface.',
+        sender: 'me',
+        timestamp: createDemoTimestamp(0, 10, 34),
+      },
+      {
+        id: 103,
+        text: 'Perfect! Let me know when you are done.',
+        sender: 'them',
+        timestamp: createDemoTimestamp(0, 10, 35),
+      },
     ],
   },
   {
@@ -24,8 +83,18 @@ const initialConversations = [
     status: 'away',
     unread: 0,
     messages: [
-      { id: 201, text: 'I will share the API details once they are ready.', sender: 'them', time: 'Yesterday' },
-      { id: 202, text: 'Sounds good. I am using mock data for now.', sender: 'me', time: 'Yesterday' },
+      {
+        id: 201,
+        text: 'I will share the API details once they are ready.',
+        sender: 'them',
+        timestamp: createDemoTimestamp(1, 14, 0),
+      },
+      {
+        id: 202,
+        text: 'Sounds good. I am using mock data for now.',
+        sender: 'me',
+        timestamp: createDemoTimestamp(1, 14, 5),
+      },
     ],
   },
   {
@@ -36,7 +105,16 @@ const initialConversations = [
     status: 'offline',
     unread: 0,
     messages: [
-      { id: 301, text: 'The UI is looking good!', sender: 'them', time: 'Monday' },
+      {
+        id: 301,
+        text: 'The UI is looking good!',
+        sender: 'them',
+        timestamp: createDemoTimestamp(
+          getMostRecentMondayOffset(),
+          11,
+          0,
+        ),
+      },
     ],
   },
   {
@@ -47,8 +125,26 @@ const initialConversations = [
     status: 'online',
     unread: 0,
     messages: [
-      { id: 401, text: 'Welcome to the project group.', sender: 'them', time: 'Monday' },
-      { id: 402, text: 'Thanks everyone!', sender: 'me', time: 'Monday' },
+      {
+        id: 401,
+        text: 'Welcome to the project group.',
+        sender: 'them',
+        timestamp: createDemoTimestamp(
+          getMostRecentMondayOffset(),
+          11,
+          30,
+        ),
+      },
+      {
+        id: 402,
+        text: 'Thanks everyone!',
+        sender: 'me',
+        timestamp: createDemoTimestamp(
+          getMostRecentMondayOffset(),
+          11,
+          35,
+        ),
+      },
     ],
   },
 ]
@@ -64,6 +160,8 @@ function ChatPage({ onNavigate }) {
   const [scheduledText, setScheduledText] = useState('')
   const [scheduledTime, setScheduledTime] = useState('')
   const [scheduledMessages, setScheduledMessages] = useState([])
+  const [replyingTo, setReplyingTo] = useState(null)
+  const [contextMenu, setContextMenu] = useState(null)
 
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === selectedId,
@@ -120,39 +218,92 @@ function highlightText(text, query) {
   )
 }, [selectedConversation, messageSearch])
 
-  function sendMessage(event) {
-    event.preventDefault()
-    const text = message.trim()
+  
+function sendMessage(event) {
+  event.preventDefault()
 
-    if (!text || !selectedConversation) return
+  const text = message.trim()
 
-    const now = new Date().toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+  if (!text || !selectedConversation) return
 
+  const newMessageId = `${Date.now()}-${Math.random()}`
+
+  const replyTo = replyingTo
+    ? {
+        id: replyingTo.id,
+        text: replyingTo.text,
+        sender: replyingTo.sender,
+      }
+    : null
+
+  setConversations((current) =>
+    current.map((conversation) =>
+      conversation.id === selectedId
+        ? {
+            ...conversation,
+            messages: [
+              ...conversation.messages,
+              {
+                id: newMessageId,
+                text,
+                sender: 'me',
+                timestamp: new Date().toISOString(),
+                status: 'sent',
+                ...(replyTo && { replyTo }),
+              },
+            ],
+          }
+        : conversation,
+    ),
+  )
+
+  // DEMO ONLY: simulate delivery after 1.5 seconds.
+  setTimeout(() => {
     setConversations((current) =>
-      current.map((conversation) =>
-        conversation.id === selectedId
-          ? {
-              ...conversation,
-              messages: [
-                ...conversation.messages,
-                {
-                  id: `${Date.now()}-${Math.random()}`,
-                  text,
-                  sender: 'me',
-                  time: now,
-                },
-              ],
-            }
-          : conversation,
-      ),
+      current.map((conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map((item) =>
+          item.id === newMessageId
+            ? { ...item, status: 'delivered' }
+            : item,
+        ),
+      })),
     )
-    setMessage('')
+  }, 1500)
+
+  // DEMO ONLY: simulate reading after 3.5 seconds.
+  setTimeout(() => {
+    setConversations((current) =>
+      current.map((conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map((item) =>
+          item.id === newMessageId
+            ? { ...item, status: 'read' }
+            : item,
+        ),
+      })),
+    )
+  }, 3500)
+
+  setMessage('')
+  setReplyingTo(null)
+  setContextMenu(null)
+}
+
+async function copyMessage(item) {
+  try {
+    await navigator.clipboard.writeText(item.text)
+  } catch (error) {
+    console.error('Could not copy message:', error)
   }
 
-  
+  setContextMenu(null)
+}
+
+function replyToMessage(item) {
+  setReplyingTo(item)
+  setContextMenu(null)
+}
 
     function scheduleMessage(event) {
         event.preventDefault()
@@ -234,7 +385,9 @@ function highlightText(text, query) {
                 <span className="conversation-details">
                   <span className="conversation-topline">
                     <strong>{conversation.name}</strong>
-                    <span className="conversation-time">{lastMessage?.time}</span>
+                    <span className="conversation-time">{lastMessage?.timestamp
+  ? formatMessageTime(lastMessage.timestamp)
+  : ''}</span>
                   </span>
                   <span className="conversation-bottomline">
                    
@@ -350,29 +503,116 @@ function highlightText(text, query) {
   </div>
 )}
             <div className="message-area">
-              <div className="date-divider"><span>TODAY</span></div>
+             
 
-              {filteredMessages.map((item) => (
-                <div
-                  className={`message-row ${item.sender === 'me' ? 'sent' : 'received'}`}
-                  key={item.id}
-                >
-                  {item.sender === 'them' && (
-                    <span className={`avatar message-avatar ${selectedConversation.color}`}>
-                      {selectedConversation.initials}
-                    </span>
-                  )}
-                  <div className="message-content">
-                    <div className={`message-bubble ${item.sender}`}>
-                      {item.text}
-                    </div>
-                    <span className="message-time">
-                      {item.time}
-                      {item.sender === 'me' && <span className="read-check"> ✓</span>}
-                    </span>
-                  </div>
-                </div>
-              ))}
+             
+{filteredMessages.map((item, index) => {
+  const dateLabel = formatDateLabel(item.timestamp)
+  const previousMessage = filteredMessages[index - 1]
+  const previousDate = previousMessage
+    ? formatDateLabel(previousMessage.timestamp)
+    : null
+
+  return (
+    <Fragment key={item.id}>
+      {dateLabel !== previousDate && (
+        <div className="date-divider">
+          <span>{dateLabel}</span>
+        </div>
+      )}
+
+      <div
+        className={`message-row ${item.sender === 'me' ? 'sent' : 'received'}`}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          setContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            item,
+          })
+        }}
+      >
+        {item.sender === 'them' && (
+          <span className={`avatar message-avatar ${selectedConversation.color}`}>
+            {selectedConversation.initials}
+          </span>
+        )}
+
+        <div className="message-content">
+          <div className={`message-bubble ${item.sender}`}>
+            {item.replyTo && (
+              <div className="message-reply-quote">
+                <strong>
+                  {item.replyTo.sender === 'me'
+                    ? 'You'
+                    : selectedConversation.name}
+                </strong>
+                <p>{item.replyTo.text}</p>
+              </div>
+            )}
+
+            {item.text}
+          </div>
+
+          <span
+            className="message-time"
+            title={new Date(item.timestamp).toLocaleString()}
+          >
+            {formatMessageTime(item.timestamp)}
+
+            {item.sender === 'me' && (
+              <span
+                className={`message-status ${item.status || 'sent'}`}
+                title={
+                  item.status === 'read'
+                    ? 'Read'
+                    : item.status === 'delivered'
+                      ? 'Delivered'
+                      : 'Sent'
+                }
+                aria-label={
+                  item.status === 'read'
+                    ? 'Read'
+                    : item.status === 'delivered'
+                      ? 'Delivered'
+                      : 'Sent'
+                }
+              >
+                {item.status === 'sent' || !item.status ? '✓' : '✓✓'}
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+    </Fragment>
+  )
+})}
+
+{contextMenu && (
+  <div
+    className="message-context-menu"
+    style={{
+      left: `${Math.min(contextMenu.x, window.innerWidth - 170)}px`,
+      top: `${Math.min(contextMenu.y, window.innerHeight - 100)}px`,
+    }}
+    onMouseLeave={() => setContextMenu(null)}
+  >
+    <button
+      type="button"
+      onClick={() => copyMessage(contextMenu.item)}
+    >
+      Copy message
+    </button>
+
+    <button
+      type="button"
+      onClick={() => replyToMessage(contextMenu.item)}
+    >
+      Reply
+    </button>
+  </div>
+)}
+
               {messageSearch.trim() && filteredMessages.length === 0 && (
   <p className="empty-search">
     No messages found in this conversation.
@@ -381,6 +621,28 @@ function highlightText(text, query) {
             </div>
 
             <div className="composer-section">
+              {replyingTo && (
+  <div className="reply-preview">
+    <div>
+      <strong>
+        Replying to{' '}
+        {replyingTo.sender === 'me'
+          ? 'yourself'
+          : selectedConversation.name}
+      </strong>
+      <p>{replyingTo.text}</p>
+    </div>
+
+    <button
+      type="button"
+      onClick={() => setReplyingTo(null)}
+      aria-label="Cancel reply"
+      title="Cancel reply"
+    >
+      ×
+    </button>
+  </div>
+)}
               <form className="message-composer" onSubmit={sendMessage}>
                 <button
                   className="composer-tool"
