@@ -4,6 +4,8 @@ const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
+const conversationRoutes = require("./routes/conversationRoutes");
+const scheduledMessageRoutes = require("./routes/scheduledMessageRoutes");
 
 const app = express();
 
@@ -28,6 +30,8 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/conversations", conversationRoutes);
+app.use("/api/scheduled-messages", scheduledMessageRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
