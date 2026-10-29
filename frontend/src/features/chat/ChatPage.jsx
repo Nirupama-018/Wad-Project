@@ -64,6 +64,8 @@ const [currentUserId, setCurrentUserId] = useState('')
 const socketRef = useRef(null)
 const selectedIdRef = useRef(selectedId)
 selectedIdRef.current = selectedId
+const messageAreaRef = useRef(null)
+const latestMessageRef = useRef(null)
 
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === selectedId,
@@ -166,6 +168,41 @@ socket.onAny((event, ...args) => console.log('SOCKET EVENT', event, args))
       })),
     )
   }
+  function applyPresence(user) {
+  const userId = String(user.userId ?? user.id ?? user._id ?? '');
+  const status = user.status;
+
+  if (!userId || !['online', 'offline', 'away'].includes(status)) {
+    return;
+  }
+
+  setConversations(previous =>
+    previous.map(conversation =>
+      String(conversation.otherUserId) === userId
+        ? { ...conversation, status }
+        : conversation
+    )
+  );
+}
+
+function handlePresenceSnapshot(snapshot) {
+  for (const user of snapshot.users ?? []) {
+    applyPresence(user);
+  }
+}
+
+function handlePresenceUpdate(user) {
+  applyPresence(user);
+}
+  function updateUserPresence(userId, status) {
+  setConversations((previous) =>
+    previous.map((conversation) =>
+      String(conversation.otherUserId) === String(userId)
+        ? { ...conversation, status }
+        : conversation,
+    ),
+  )
+}
 
   socket.on('connect_error', (error) => {
     console.error('Socket connection failed:', error.message)
@@ -173,12 +210,40 @@ socket.onAny((event, ...args) => console.log('SOCKET EVENT', event, args))
 
   socket.on('message:new', handleNewMessage)
   socket.on('message:status', handleMessageStatus)
+  socket.on('presence:snapshot', handlePresenceSnapshot)
+socket.on('presence:update', handlePresenceUpdate)
+function reportActivity() {
+  if (document.visibilityState === 'visible') {
+    socket.emit('presence:activity', { isVisible: true })
+  }
+}
+
+const activityEvents = [
+  'pointerdown',
+  'keydown',
+  'mousemove',
+  'scroll',
+  'touchstart',
+]
+
+activityEvents.forEach(event => {
+  document.addEventListener(event, reportActivity, { passive: true })
+})
+
+document.addEventListener('visibilitychange', reportActivity)
 
   socketRef.current = socket
 
   return () => {
     socket.off('message:new', handleNewMessage)
     socket.off('message:status', handleMessageStatus)
+    socket.off('presence:snapshot', handlePresenceSnapshot)
+socket.off('presence:update', handlePresenceUpdate)
+activityEvents.forEach(event => {
+    document.removeEventListener(event, reportActivity)
+  })
+
+  document.removeEventListener('visibilitychange', reportActivity)
     socket.disconnect()
 
     if (socketRef.current === socket) {
@@ -199,6 +264,7 @@ useEffect(() => {
 
       const list = (data.conversations ?? []).map((item) => ({
         id: item.conversationId,
+        otherUserId: String(item.otherUser?.id ?? item.otherUser?._id ?? ''),
         name: item.otherUser?.name ?? 'Unknown user',
         initials: (item.otherUser?.name ?? 'U')
           .split(' ')
@@ -344,6 +410,15 @@ useEffect(() => {
     cancelled = true
   }
 }, [selectedId, currentUserId])
+
+useEffect(() => {
+  if (!selectedId) return
+
+  latestMessageRef.current?.scrollIntoView({
+    behavior: 'auto',
+    block: 'end',
+  })
+}, [selectedId, selectedConversation?.messages.length])
 
 
 function highlightText(text, query) {
@@ -684,7 +759,7 @@ function replyToMessage(item) {
     </button>
   </div>
 )}
-            <div className="message-area">
+            <div className="message-area" ref={messageAreaRef}>
              
 
              
@@ -704,7 +779,12 @@ function replyToMessage(item) {
       )}
 
       <div
-        className={`message-row ${item.sender === 'me' ? 'sent' : 'received'}`}
+  ref={
+    index === filteredMessages.length - 1
+      ? latestMessageRef
+      : null
+  }
+  className={`message-row ${item.sender === 'me' ? 'sent' : 'received'}`}
         onContextMenu={(event) => {
           event.preventDefault()
           setContextMenu({
