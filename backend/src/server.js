@@ -13,7 +13,7 @@ if (process.env.NODE_ENV !== "production") {
 const http = require("http");
 const jwt = require("jsonwebtoken");
 const { Server } = require("socket.io");
-const mongoose = require("../../database/node_modules/mongoose");
+const mongoose = require("mongoose");
 
 const app = require("./app");
 const connectDB = require("../../database/src/config/db");
@@ -32,6 +32,7 @@ const {
 } = require("../../realtime/src");
 
 const PORT = Number(process.env.PORT) || 5000;
+
 const FRONTEND_ORIGINS = (
   process.env.FRONTEND_ORIGIN || "http://localhost:5173"
 )
