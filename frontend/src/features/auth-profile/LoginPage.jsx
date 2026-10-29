@@ -1,5 +1,5 @@
-
 import { useState } from 'react'
+import { apiRequest } from '../../lib/api'
 import './AuthPages.css'
 
 function LoginPage({ onLogin, onNavigate }) {
@@ -7,8 +7,9 @@ function LoginPage({ onLogin, onNavigate }) {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
     setError('')
 
@@ -17,13 +18,27 @@ function LoginPage({ onLogin, onNavigate }) {
       return
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setError('Please enter a valid email address.')
-      return
-    }
+    setIsSubmitting(true)
 
-    // The backend authentication API will be connected later.
-    onLogin?.({ email: email.trim(), password })
+    try {
+      const data = await apiRequest('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+        }),
+      })
+
+      if (!data.user) {
+        throw new Error('Login succeeded, but no user profile was returned.')
+      }
+
+      onLogin?.(data.user)
+    } catch (err) {
+      setError(err.message || 'Unable to sign in.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -114,8 +129,13 @@ function LoginPage({ onLogin, onNavigate }) {
               </p>
             )}
 
-            <button className="auth-primary-button" type="submit">
-              Sign in <span aria-hidden="true">→</span>
+            <button
+              className="auth-primary-button"
+              type="submit"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Signing in...' : 'Sign in'}
+              {!isSubmitting && <span aria-hidden="true"> →</span>}
             </button>
           </form>
 

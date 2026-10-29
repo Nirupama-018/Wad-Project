@@ -1,31 +1,52 @@
 
 import { useState } from 'react'
 import './AuthPages.css'
+import { apiRequest } from '../../lib/api'
 
-function SignupPage({ onNavigate }) {
+function SignupPage({ onNavigate, onSignup }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  function handleSubmit(event) {
-    event.preventDefault()
-    setError('')
+  
+async function handleSubmit(event) {
+  event.preventDefault()
+  setError('')
 
-    if (password.length < 8) {
-      setError('Password must contain at least 8 characters.')
-      return
-    }
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
-      return
-    }
-
-    // Temporary UI navigation until the backend API is available.
-    onNavigate?.('otp')
+  if (password.length < 8) {
+    setError('Password must contain at least 8 characters.')
+    return
   }
+
+  if (password !== confirmPassword) {
+    setError('Passwords do not match.')
+    return
+  }
+
+  setIsSubmitting(true)
+
+  try {
+    const data = await apiRequest('/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+      }),
+    })
+
+    // Navigate only after the backend confirms signup.
+    onSignup?.(data.email || email.trim())
+  } catch (error) {
+    setError(error.message || 'Unable to create your account.')
+  } finally {
+    setIsSubmitting(false)
+  }
+}
+
 
   return (
     <main className="auth-page">
@@ -126,9 +147,14 @@ function SignupPage({ onNavigate }) {
               </p>
             )}
 
-            <button className="auth-primary-button" type="submit">
-              Create account <span aria-hidden="true">→</span>
-            </button>
+            <button
+  className="auth-primary-button"
+  type="submit"
+  disabled={isSubmitting}
+>
+  {isSubmitting ? 'Creating account...' : 'Create account'}
+  {!isSubmitting && <span aria-hidden="true">→</span>}
+</button>
           </form>
 
           <p className="auth-switch">

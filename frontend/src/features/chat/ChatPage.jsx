@@ -1,18 +1,9 @@
 
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { apiRequest } from '../../lib/api'
 import './ChatPage.css'
+import { io } from 'socket.io-client'
 
-
-function createDemoTimestamp(daysAgo, hour, minute) {
-  const date = new Date()
-  date.setDate(date.getDate() - daysAgo)
-  date.setHours(hour, minute, 0, 0)
-  return date.toISOString()
-}
-
-function getMostRecentMondayOffset() {
-  return (new Date().getDay() + 6) % 7
-}
 
 function formatMessageTime(timestamp) {
   return new Date(timestamp).toLocaleTimeString([], {
@@ -46,112 +37,17 @@ function formatDateLabel(timestamp) {
 
 
 
-const initialConversations = [
-  {
-    id: 1,
-    name: 'Ananya Menon',
-    initials: 'AM',
-    color: 'lavender',
-    status: 'online',
-    unread: 2,
-    messages: [
-      {
-        id: 101,
-        text: 'Hey! Have you checked the project updates?',
-        sender: 'them',
-        timestamp: createDemoTimestamp(0, 10, 32),
-      },
-      {
-        id: 102,
-        text: 'Not yet, I was working on the chat interface.',
-        sender: 'me',
-        timestamp: createDemoTimestamp(0, 10, 34),
-      },
-      {
-        id: 103,
-        text: 'Perfect! Let me know when you are done.',
-        sender: 'them',
-        timestamp: createDemoTimestamp(0, 10, 35),
-      },
-    ],
-  },
-  {
-    id: 2,
-    name: 'Rahul Krishnan',
-    initials: 'RK',
-    color: 'peach',
-    status: 'away',
-    unread: 0,
-    messages: [
-      {
-        id: 201,
-        text: 'I will share the API details once they are ready.',
-        sender: 'them',
-        timestamp: createDemoTimestamp(1, 14, 0),
-      },
-      {
-        id: 202,
-        text: 'Sounds good. I am using mock data for now.',
-        sender: 'me',
-        timestamp: createDemoTimestamp(1, 14, 5),
-      },
-    ],
-  },
-  {
-    id: 3,
-    name: 'Meera Nair',
-    initials: 'MN',
-    color: 'mint',
-    status: 'offline',
-    unread: 0,
-    messages: [
-      {
-        id: 301,
-        text: 'The UI is looking good!',
-        sender: 'them',
-        timestamp: createDemoTimestamp(
-          getMostRecentMondayOffset(),
-          11,
-          0,
-        ),
-      },
-    ],
-  },
-  {
-    id: 4,
-    name: 'Project Team',
-    initials: 'PT',
-    color: 'blue',
-    status: 'online',
-    unread: 0,
-    messages: [
-      {
-        id: 401,
-        text: 'Welcome to the project group.',
-        sender: 'them',
-        timestamp: createDemoTimestamp(
-          getMostRecentMondayOffset(),
-          11,
-          30,
-        ),
-      },
-      {
-        id: 402,
-        text: 'Thanks everyone!',
-        sender: 'me',
-        timestamp: createDemoTimestamp(
-          getMostRecentMondayOffset(),
-          11,
-          35,
-        ),
-      },
-    ],
-  },
-]
+
 
 function ChatPage({ onNavigate }) {
-  const [conversations, setConversations] = useState(initialConversations)
-  const [selectedId, setSelectedId] = useState(1)
+  const [conversations, setConversations] = useState([])
+const [selectedId, setSelectedId] = useState(null)
+const [isLoadingConversations, setIsLoadingConversations] = useState(true)
+const [conversationError, setConversationError] = useState('')
+const [users, setUsers] = useState([])
+const [showNewChat, setShowNewChat] = useState(false)
+const [isLoadingUsers, setIsLoadingUsers] = useState(false)
+const [userSearch, setUserSearch] = useState('')
   const [search, setSearch] = useState('')
   const [showMessageSearch, setShowMessageSearch] = useState(false)
   const [messageSearch, setMessageSearch] = useState('')
@@ -162,11 +58,245 @@ function ChatPage({ onNavigate }) {
   const [scheduledMessages, setScheduledMessages] = useState([])
   const [replyingTo, setReplyingTo] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+const [messageError, setMessageError] = useState('')
+const [currentUserId, setCurrentUserId] = useState('')
+const socketRef = useRef(null)
 
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === selectedId,
   )
-  
+// Fetch the logged-in user's ID.
+useEffect(() => {
+  let cancelled = false
+
+  async function loadCurrentUser() {
+    try {
+      const data = await apiRequest('/api/users/me')
+
+      if (!cancelled) {
+        setCurrentUserId(String(data.user.id))
+      }
+    } catch (err) {
+      if (!cancelled) {
+        setMessageError(err.message || 'Could not identify the logged-in user.')
+      }
+    }
+  }
+
+  loadCurrentUser()
+
+  return () => {
+    cancelled = true
+  }
+}, [])
+
+// Connect to the authenticated Socket.IO server.
+useEffect(() => {
+  if (!currentUserId) return
+
+  const socket = io('http://localhost:5000', {
+    withCredentials: true,
+  })
+
+  socketRef.current = socket
+
+  socket.on('connect_error', (err) => {
+    setMessageError(
+      err.message === 'AUTHENTICATION_REQUIRED' ||
+      err.message === 'INVALID_SESSION'
+        ? 'Your session has expired. Please log in again.'
+        : 'Could not connect to the messaging server.',
+    )
+  })
+
+  return () => {
+    socket.disconnect()
+    socketRef.current = null
+  }
+}, [currentUserId])
+
+useEffect(() => {
+  const socket = socketRef.current
+
+  if (!socket || !currentUserId) return
+
+  function handleNewMessage(item) {
+    const conversationId = String(item.conversationId)
+    const messageId = String(item.messageId ?? item._id ?? item.id)
+    const isOpen = conversationId === selectedId
+
+    const newMessage = {
+      id: messageId,
+      text: item.content ?? item.text ?? '',
+      sender: String(item.senderId) === currentUserId ? 'me' : 'them',
+      timestamp: item.timestamp ?? item.createdAt ?? new Date().toISOString(),
+      status: item.status ?? 'sent',
+      replyTo: null,
+    }
+
+    setConversations((current) =>
+      current.map((conversation) => {
+        if (conversation.id !== conversationId) return conversation
+
+        const alreadyExists = conversation.messages.some(
+          (message) => message.id === messageId,
+        )
+
+        if (alreadyExists) return conversation
+
+        return {
+          ...conversation,
+          unread: isOpen ? 0 : conversation.unread + 1,
+          messages: [...conversation.messages, newMessage],
+        }
+      }),
+    )
+
+    // Tell the server that the message reached this client.
+    if (newMessage.sender === 'them') {
+      socket.emit('message:delivered', { messageId })
+
+      // Only mark it as read when its conversation is open.
+      if (isOpen) {
+        socket.emit('message:read', { messageId })
+      }
+    }
+  }
+
+  function handleMessageStatus(receipt) {
+    setConversations((current) =>
+      current.map((conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map((item) =>
+          item.id === String(receipt.messageId)
+            ? { ...item, status: receipt.status }
+            : item,
+        ),
+      })),
+    )
+  }
+
+  socket.on('message:new', handleNewMessage)
+  socket.on('message:status', handleMessageStatus)
+
+  return () => {
+    socket.off('message:new', handleNewMessage)
+    socket.off('message:status', handleMessageStatus)
+  }
+}, [currentUserId, selectedId])
+useEffect(() => {
+  let cancelled = false
+
+  async function loadConversations() {
+    setIsLoadingConversations(true)
+    setConversationError('')
+
+    try {
+      const data = await apiRequest('/api/conversations')
+      if (cancelled) return
+
+      const list = (data.conversations ?? []).map((item) => ({
+        id: item.conversationId,
+        name: item.otherUser?.name ?? 'Unknown user',
+        initials: (item.otherUser?.name ?? 'U')
+          .split(' ')
+          .filter(Boolean)
+          .map((part) => part[0])
+          .join('')
+          .slice(0, 2)
+          .toUpperCase(),
+        color: '#64748b',
+        status: 'offline',
+        unread: 0,
+        messages: item.lastMessage
+          ? [{
+              id: item.lastMessage.messageId ?? item.lastMessage._id,
+              text: item.lastMessage.content ?? item.lastMessage.text ?? '',
+              sender: 'them',
+              timestamp: item.lastMessageAt
+                ? new Date(item.lastMessageAt)
+                : new Date(),
+              status: 'sent',
+              replyTo: null,
+            }]
+          : [],
+      }))
+
+      setConversations(list)
+      setSelectedId((currentId) =>
+        list.some((item) => item.id === currentId)
+          ? currentId
+          : list[0]?.id ?? null,
+      )
+    } catch (err) {
+      if (!cancelled) {
+        setConversationError(
+          err.message || 'Could not load conversations.',
+        )
+      }
+    } finally {
+      if (!cancelled) setIsLoadingConversations(false)
+    }
+  }
+
+  loadConversations()
+
+  return () => {
+    cancelled = true
+  }
+}, [])
+
+
+useEffect(() => {
+  if (!selectedId) return
+
+  let cancelled = false
+
+  async function loadMessages() {
+    setIsLoadingMessages(true)
+    setMessageError('')
+
+    try {
+      const data = await apiRequest(
+        `/api/conversations/${selectedId}/messages?limit=30`,
+      )
+
+      if (cancelled) return
+
+      const messages = (data.messages ?? []).map((item) => ({
+  id: String(item.messageId ?? item._id ?? item.id),
+  text: item.content ?? item.text ?? '',
+  sender: String(item.senderId) === currentUserId ? 'me' : 'them',
+  timestamp: item.timestamp ?? item.createdAt ?? new Date().toISOString(),
+  status: item.status ?? 'sent',
+  replyTo: null,
+}))
+
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversation.id === selectedId
+            ? { ...conversation, messages }
+            : conversation,
+        ),
+      )
+    } catch (err) {
+      if (!cancelled) {
+        setMessageError(err.message || 'Could not load message history.')
+      }
+    } finally {
+      if (!cancelled) setIsLoadingMessages(false)
+    }
+  }
+
+  loadMessages()
+
+  return () => {
+    cancelled = true
+  }
+}, [selectedId, currentUserId])
+
+
 function highlightText(text, query) {
   if (!query.trim()) return text
 
@@ -223,71 +353,73 @@ function sendMessage(event) {
   event.preventDefault()
 
   const text = message.trim()
+  const socket = socketRef.current
 
   if (!text || !selectedConversation) return
 
-  const newMessageId = `${Date.now()}-${Math.random()}`
+  if (!socket?.connected) {
+    setMessageError('Not connected to the messaging server. Please try again.')
+    return
+  }
 
-  const replyTo = replyingTo
-    ? {
-        id: replyingTo.id,
-        text: replyingTo.text,
-        sender: replyingTo.sender,
+  setMessageError('')
+
+  const clientMessageId = crypto.randomUUID()
+
+  socket.emit(
+    'message:send',
+    {
+      conversationId: selectedId,
+      content: text,
+      clientMessageId,
+    },
+    (response) => {
+      if (!response?.success) {
+        setMessageError(
+          response?.message || 'Message could not be sent. Please try again.',
+        )
+        return
       }
-    : null
 
-  setConversations((current) =>
-    current.map((conversation) =>
-      conversation.id === selectedId
-        ? {
+      const item = response.message
+
+      const sentMessage = {
+        id: String(item.messageId ?? item._id ?? item.id),
+        text: item.content ?? item.text ?? text,
+        sender: 'me',
+        timestamp: item.timestamp ?? item.createdAt ?? new Date().toISOString(),
+        status: item.status ?? 'sent',
+        replyTo: replyingTo
+          ? {
+              id: replyingTo.id,
+              text: replyingTo.text,
+              sender: replyingTo.sender,
+            }
+          : null,
+      }
+
+      setConversations((current) =>
+        current.map((conversation) => {
+          if (conversation.id !== selectedId) return conversation
+
+          const alreadyExists = conversation.messages.some(
+            (existing) => existing.id === sentMessage.id,
+          )
+
+          if (alreadyExists) return conversation
+
+          return {
             ...conversation,
-            messages: [
-              ...conversation.messages,
-              {
-                id: newMessageId,
-                text,
-                sender: 'me',
-                timestamp: new Date().toISOString(),
-                status: 'sent',
-                ...(replyTo && { replyTo }),
-              },
-            ],
+            messages: [...conversation.messages, sentMessage],
           }
-        : conversation,
-    ),
+        }),
+      )
+
+      setMessage('')
+      setReplyingTo(null)
+      setContextMenu(null)
+    },
   )
-
-  // DEMO ONLY: simulate delivery after 1.5 seconds.
-  setTimeout(() => {
-    setConversations((current) =>
-      current.map((conversation) => ({
-        ...conversation,
-        messages: conversation.messages.map((item) =>
-          item.id === newMessageId
-            ? { ...item, status: 'delivered' }
-            : item,
-        ),
-      })),
-    )
-  }, 1500)
-
-  // DEMO ONLY: simulate reading after 3.5 seconds.
-  setTimeout(() => {
-    setConversations((current) =>
-      current.map((conversation) => ({
-        ...conversation,
-        messages: conversation.messages.map((item) =>
-          item.id === newMessageId
-            ? { ...item, status: 'read' }
-            : item,
-        ),
-      })),
-    )
-  }, 3500)
-
-  setMessage('')
-  setReplyingTo(null)
-  setContextMenu(null)
 }
 
 async function copyMessage(item) {
@@ -674,8 +806,8 @@ function replyToMessage(item) {
                 </button>
               </form>
               <p className="composer-caption">
-                Messages are currently local demo data, not sent to a server.
-              </p>
+  Messages are sent securely through your chat connection.
+</p>
 
               {scheduledMessages.length > 0 && (
                 <div className="scheduled-list">
