@@ -150,10 +150,18 @@ router.post("/signup", authLimiter, async (req, res, next) => {
 
     try {
       await issueOtp(user);
-    } catch (error) {
+        } catch (error) {
+      console.error("[SIGNUP EMAIL ERROR]", {
+        name: error.name,
+        code: error.code,
+        message: error.message,
+        command: error.command,
+        responseCode: error.responseCode,
+      });
+
       return res.status(503).json({
         success: false,
-        message: "Could not send the verification code. Configure email delivery and try again.",
+        message: "Could not send the verification code. Check backend logs.",
       });
     }
 
