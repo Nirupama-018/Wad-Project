@@ -97,11 +97,15 @@ useEffect(() => {
 useEffect(() => {
   if (!currentUserId) return
 
-  const socket = io('http://localhost:5000', {
-    withCredentials: true,
-  })
+  const socket = io(import.meta.env.VITE_API_URL ?? 'http://localhost:5000', {
+  withCredentials: true,
+})
 
-  socketRef.current = socket
+socketRef.current = socket
+
+// temporary debug logs, remove once it works
+socket.on('connect', () => console.log('connected', socket.id))
+socket.onAny((event, ...args) => console.log('SOCKET EVENT', event, args))
 
   function handleNewMessage(item) {
     const conversationId = String(item.conversationId)
@@ -184,7 +188,7 @@ useEffect(() => {
 }, [currentUserId])
 useEffect(() => {
   let cancelled = false
-
+  if (!currentUserId) return
   async function loadConversations() {
     setIsLoadingConversations(true)
     setConversationError('')
@@ -207,18 +211,27 @@ useEffect(() => {
         status: 'offline',
         unread: 0,
         messages: item.lastMessage
-          ? [{
-              id: item.lastMessage.messageId ?? item.lastMessage._id,
-              text: item.lastMessage.content ?? item.lastMessage.text ?? '',
-              sender: 'them',
-              timestamp: item.lastMessageAt
-                ? new Date(item.lastMessageAt)
-                : new Date(),
-              status: 'sent',
-              replyTo: null,
-            }]
-          : [],
-      }))
+  ? [{
+      id: String(
+        item.lastMessage.messageId ??
+        item.lastMessage._id ??
+        item.lastMessage.id
+      ),
+      text: item.lastMessage.content ?? item.lastMessage.text ?? '',
+      sender:
+        String(item.lastMessage.senderId) === String(currentUserId)
+          ? 'me'
+          : 'them',
+      timestamp:
+        item.lastMessage.timestamp ??
+        item.lastMessage.createdAt ??
+        item.lastMessageAt ??
+        new Date(),
+      status: item.lastMessage.status ?? 'sent',
+      replyTo: null,
+    }]
+  : [],
+      })) 
 
      setConversations((previous) =>
   list.map((conversation) => {
@@ -267,11 +280,11 @@ useEffect(() => {
   return () => {
     cancelled = true
   }
-}, [])
+}, [currentUserId])
 
 
 useEffect(() => {
-  if (!selectedId) return
+  if (!selectedId || !currentUserId) return
 
   let cancelled = false
 
