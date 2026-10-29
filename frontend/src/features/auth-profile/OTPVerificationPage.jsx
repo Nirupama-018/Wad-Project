@@ -1,14 +1,16 @@
-
 import { useEffect, useRef, useState } from 'react'
+import { apiRequest } from '../../lib/api'
 import './AuthPages.css'
 
 const OTP_LENGTH = 6
 const RESEND_SECONDS = 30
 
-function OTPVerificationPage({ onNavigate }) {
+function OTPVerificationPage({ email = '', onNavigate }) {
   const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''))
   const [secondsLeft, setSecondsLeft] = useState(RESEND_SECONDS)
   const [message, setMessage] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [isResending, setIsResending] = useState(false)
   const inputRefs = useRef([])
 
   useEffect(() => {
@@ -23,16 +25,15 @@ function OTPVerificationPage({ onNavigate }) {
 
   function handleChange(index, value) {
     const digits = value.replace(/\D/g, '')
+    const nextOtp = [...otp]
+
     if (!digits) {
-      setOtp((current) =>
-        current.map((digit, i) => (i === index ? '' : digit)),
-      )
+      nextOtp[index] = ''
+      setOtp(nextOtp)
       setMessage('')
       return
     }
 
-    // Supports typing one digit or pasting multiple digits.
-    const nextOtp = [...otp]
     const pastedDigits = digits.slice(0, OTP_LENGTH - index)
 
     pastedDigits.split('').forEach((digit, offset) => {
@@ -60,26 +61,67 @@ function OTPVerificationPage({ onNavigate }) {
     }
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
+
+    if (isLoading) return
+
+    if (!email) {
+      setMessage('Your signup email is missing. Please sign up again.')
+      return
+    }
 
     if (otp.some((digit) => digit === '')) {
       setMessage('Please enter all six digits.')
       return
     }
 
-    setMessage(
-      'Demo only: OTP verification will work after backend integration.',
-    )
+    setIsLoading(true)
+    setMessage('')
+
+    try {
+      await apiRequest('/api/auth/verify-otp', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: email.trim(),
+          otp: otp.join(''),
+        }),
+      })
+
+      onNavigate?.('login')
+    } catch (error) {
+      setMessage(error.message || 'OTP verification failed. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  function handleResend() {
-    if (secondsLeft > 0) return
+  async function handleResend() {
+    if (secondsLeft > 0 || isResending || isLoading) return
 
-    setOtp(Array(OTP_LENGTH).fill(''))
-    setSecondsLeft(RESEND_SECONDS)
-    setMessage('Demo only: no OTP has actually been sent.')
-    inputRefs.current[0]?.focus()
+    if (!email) {
+      setMessage('Your signup email is missing. Please sign up again.')
+      return
+    }
+
+    setIsResending(true)
+    setMessage('')
+
+    try {
+      await apiRequest('/api/auth/resend-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim() }),
+      })
+
+      setOtp(Array(OTP_LENGTH).fill(''))
+      setSecondsLeft(RESEND_SECONDS)
+      setMessage('A new verification code has been requested.')
+      inputRefs.current[0]?.focus()
+    } catch (error) {
+      setMessage(error.message || 'Could not resend the code. Please try again.')
+    } finally {
+      setIsResending(false)
+    }
   }
 
   return (
@@ -117,8 +159,7 @@ function OTPVerificationPage({ onNavigate }) {
             <span className="auth-kicker">EMAIL VERIFICATION</span>
             <h2>Enter verification code</h2>
             <p>
-              Enter the six-digit code to verify your email address.
-              In this demo, no email is sent.
+              Enter the six-digit code sent to {email || 'your email address'}.
             </p>
           </div>
 
@@ -137,10 +178,9 @@ function OTPVerificationPage({ onNavigate }) {
                   aria-label={`OTP digit ${index + 1}`}
                   maxLength={OTP_LENGTH}
                   value={digit}
-                  onChange={(event) =>
-                    handleChange(index, event.target.value)
-                  }
+                  onChange={(event) => handleChange(index, event.target.value)}
                   onKeyDown={(event) => handleKeyDown(index, event)}
+                  disabled={isLoading}
                   required
                 />
               ))}
@@ -152,8 +192,13 @@ function OTPVerificationPage({ onNavigate }) {
               </p>
             )}
 
-            <button className="auth-primary-button" type="submit">
-              Verify code <span aria-hidden="true">→</span>
+            <button
+              className="auth-primary-button"
+              type="submit"
+              disabled={isLoading || isResending}
+            >
+              {isLoading ? 'Verifying...' : 'Verify code'}
+              {!isLoading && <span aria-hidden="true"> →</span>}
             </button>
           </form>
 
@@ -162,8 +207,12 @@ function OTPVerificationPage({ onNavigate }) {
             {secondsLeft > 0 ? (
               <span>Resend in {secondsLeft}s</span>
             ) : (
-              <button type="button" onClick={handleResend}>
-                Resend code
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={isResending || isLoading}
+              >
+                {isResending ? 'Sending...' : 'Resend code'}
               </button>
             )}
           </p>
