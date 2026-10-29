@@ -4,15 +4,25 @@ const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
+const conversationRoutes = require("./routes/conversationRoutes");
+const scheduledMessageRoutes = require("./routes/scheduledMessageRoutes");
 
 const app = express();
 
 app.use(helmet());
 
+const allowedOrigins = (
+  process.env.FRONTEND_ORIGIN || "http://localhost:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_ORIGIN || "http://localhost:5173",
+    origin: allowedOrigins,
     credentials: true,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   })
 );
 
@@ -28,6 +38,8 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/conversations", conversationRoutes);
+app.use("/api/scheduled-messages", scheduledMessageRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
