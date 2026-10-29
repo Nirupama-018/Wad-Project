@@ -122,47 +122,50 @@ useEffect(() => {
   if (!socket || !currentUserId) return
 
   function handleNewMessage(item) {
-    const conversationId = String(item.conversationId)
-    const messageId = String(item.messageId ?? item._id ?? item.id)
-    const isOpen = conversationId === selectedId
+  const conversationId = String(item.conversationId)
+  const messageId = String(item.messageId ?? item._id ?? item.id)
+  const isOpen = conversationId === String(selectedId)
 
-    const newMessage = {
-      id: messageId,
-      text: item.content ?? item.text ?? '',
-      sender: String(item.senderId) === currentUserId ? 'me' : 'them',
-      timestamp: item.timestamp ?? item.createdAt ?? new Date().toISOString(),
-      status: item.status ?? 'sent',
-      replyTo: null,
-    }
+  const newMessage = {
+    id: messageId,
+    text: item.content ?? item.text ?? '',
+    sender: String(item.senderId) === currentUserId ? 'me' : 'them',
+    timestamp: item.timestamp ?? item.createdAt ?? new Date().toISOString(),
+    status: item.status ?? 'sent',
+    replyTo: null,
+  }
 
-    setConversations((current) =>
-      current.map((conversation) => {
-        if (conversation.id !== conversationId) return conversation
-
-        const alreadyExists = conversation.messages.some(
-          (message) => message.id === messageId,
-        )
-
-        if (alreadyExists) return conversation
-
-        return {
-          ...conversation,
-          unread: isOpen ? 0 : conversation.unread + 1,
-          messages: [...conversation.messages, newMessage],
-        }
-      }),
-    )
-
-    // Tell the server that the message reached this client.
-    if (newMessage.sender === 'them') {
-      socket.emit('message:delivered', { messageId })
-
-      // Only mark it as read when its conversation is open.
-      if (isOpen) {
-        socket.emit('message:read', { messageId })
+  setConversations((current) =>
+    current.map((conversation) => {
+      if (String(conversation.id) !== conversationId) {
+        return conversation
       }
+
+      // Prevent duplicate messages.
+      if (
+        conversation.messages.some(
+          (existing) => String(existing.id) === messageId,
+        )
+      ) {
+        return conversation
+      }
+
+      return {
+        ...conversation,
+        unread: isOpen ? 0 : conversation.unread + 1,
+        messages: [...conversation.messages, newMessage],
+      }
+    }),
+  )
+
+  if (newMessage.sender === 'them') {
+    socket.emit('message:delivered', { messageId })
+
+    if (isOpen) {
+      socket.emit('message:read', { messageId })
     }
   }
+}
 
   function handleMessageStatus(receipt) {
     setConversations((current) =>
@@ -177,7 +180,7 @@ useEffect(() => {
     )
   }
 
-  socket.on('message:new', handleNewMessage)
+socket.on('message:new', handleNewMessage)
   socket.on('message:status', handleMessageStatus)
 
   return () => {
