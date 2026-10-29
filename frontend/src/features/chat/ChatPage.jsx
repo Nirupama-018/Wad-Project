@@ -48,6 +48,7 @@ const [users, setUsers] = useState([])
 const [showNewChat, setShowNewChat] = useState(false)
 const [isLoadingUsers, setIsLoadingUsers] = useState(false)
 const [userSearch, setUserSearch] = useState('')
+
   const [search, setSearch] = useState('')
   const [showMessageSearch, setShowMessageSearch] = useState(false)
   const [messageSearch, setMessageSearch] = useState('')
@@ -61,6 +62,7 @@ const [userSearch, setUserSearch] = useState('')
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
 const [messageError, setMessageError] = useState('')
 const [currentUserId, setCurrentUserId] = useState('')
+const [currentUserName, setCurrentUserName] = useState('')
 const socketRef = useRef(null)
 const selectedIdRef = useRef(selectedId)
 selectedIdRef.current = selectedId
@@ -68,9 +70,86 @@ const messageAreaRef = useRef(null)
 const latestMessageRef = useRef(null)
 const presenceMapRef = useRef(new Map())
 
+
+
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === selectedId,
   )
+
+  const loadUsers = async (search = '') => {
+  setIsLoadingUsers(true)
+
+  try {
+    const query = search.trim()
+      ? `?search=${encodeURIComponent(search.trim())}`
+      : ''
+
+    console.log('Fetching users:', `/api/users${query}`)
+
+    const data = await apiRequest(`/api/users${query}`)
+
+    console.log('USERS API RESPONSE:', data)
+
+    setUsers(data.users || [])
+  } catch (error) {
+    console.error('Failed to load users:', error)
+    setUsers([])
+  } finally {
+    setIsLoadingUsers(false)
+  }
+}
+
+const startConversation = async (user) => {
+  
+  try {
+    const data = await apiRequest('/api/conversations', {
+      method: 'POST',
+      body: JSON.stringify({
+        recipientId: user.id,
+      }),
+    })
+
+    const conversation = data.conversation
+
+    if (!conversation?.conversationId) {
+      throw new Error('No conversation ID returned by the server.')
+    }
+
+    const newConversation = {
+      id: conversation.conversationId,
+      name: conversation.otherUser?.name || user.name,
+      email: conversation.otherUser?.email || user.email,
+      bio: conversation.otherUser?.bio || user.bio || '',
+      //status: 'offline',
+      unread: 0,
+      lastMessage: conversation.lastMessage || null,
+      messages: [],
+    }
+
+    setConversations((previous) => {
+      const exists = previous.some(
+        (item) => String(item.id) === String(newConversation.id),
+      )
+
+      if (exists) {
+        return previous.map((item) =>
+          String(item.id) === String(newConversation.id)
+            ? { ...item, ...newConversation, messages: item.messages || [] }
+            : item,
+        )
+      }
+
+      return [newConversation, ...previous]
+    })
+
+    setSelectedId(conversation.conversationId)
+    setShowNewChat(false)
+    setUserSearch('')
+  } catch (error) {
+    console.error('Failed to start conversation:', error)
+    alert(error.message || 'Could not start conversation.')
+  }
+}
 // Fetch the logged-in user's ID.
 useEffect(() => {
   let cancelled = false
@@ -80,8 +159,9 @@ useEffect(() => {
       const data = await apiRequest('/api/users/me')
 
       if (!cancelled) {
-        setCurrentUserId(String(data.user.id))
-      }
+  setCurrentUserId(String(data.user.id))
+  setCurrentUserName(data.user.name ?? '')
+}
     } catch (err) {
       if (!cancelled) {
         setMessageError(err.message || 'Could not identify the logged-in user.')
@@ -157,6 +237,9 @@ socket.onAny((event, ...args) => console.log('SOCKET EVENT', event, args))
     }
   }
 
+
+
+
   function handleMessageStatus(receipt) {
     setConversations((previous) =>
       previous.map((conversation) => ({
@@ -186,6 +269,8 @@ function applyPresence(user) {
     )
   )
 }
+
+
 
 
 function handlePresenceSnapshot(snapshot) {
@@ -285,7 +370,7 @@ status: presenceMapRef.current.get(
           .slice(0, 2)
           .toUpperCase(),
         color: '#64748b',
-        status: 'offline',
+        //status: 'offline',
         unread: 0,
         messages: item.lastMessage
   ? [{
@@ -606,16 +691,30 @@ function replyToMessage(item) {
 
 
   return (
+
     <main className="chat-app">
+
       <aside className="sidebar">
         <header className="sidebar-header">
-          <a className="brand" href="#" aria-label="Wad home">
+          <a className="brand" href="#" aria-label="Wavelength home">
             <span className="brand-mark">w</span>
-            <span>wad<span className="brand-dot">.</span></span>
+            <span>Wavelength<span className="brand-dot">.</span></span>
           </a>
-          <button className="icon-button new-chat" type="button" title="New chat" aria-label="New chat">
-            +
-          </button>
+          <button
+  className="icon-button new-chat"
+  type="button"
+  title="New chat"
+  aria-label="New chat"
+  onClick={() => {
+  console.log('Before click:', showNewChat)
+  setShowNewChat(true)
+  console.log('After setShowNewChat(true)')
+  setUserSearch('')
+  loadUsers()
+}}
+>
+  +
+</button>
         </header>
 
         <div className="sidebar-intro">
@@ -693,7 +792,16 @@ function replyToMessage(item) {
     onClick={() => onNavigate?.('profile')}
     aria-label="Open your profile"
   >
-    <span className="avatar profile-avatar">NS</span>
+    <span className="avatar profile-avatar">
+  {currentUserName
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'U'}
+</span>
     <span className="profile-details">
       <strong>Your profile</strong>
       <span>Available</span>
@@ -1029,6 +1137,53 @@ function replyToMessage(item) {
           </section>
         </div>
       )}
+
+      {showNewChat && (
+  <div className="new-chat-panel">
+    <div className="new-chat-header">
+      <h3>New conversation</h3>
+      <button
+        type="button"
+        onClick={() => setShowNewChat(false)}
+        aria-label="Close new conversation"
+      >
+        ×
+      </button>
+    </div>
+
+    <input
+      type="search"
+      placeholder="Search by name or email..."
+      value={userSearch}
+      onChange={(event) => {
+        const value = event.target.value
+        setUserSearch(value)
+        loadUsers(value)
+      }}
+    />
+
+    {isLoadingUsers ? (
+      <p>Loading users...</p>
+    ) : users.length === 0 ? (
+      <p>No users found.</p>
+    ) : (
+      <div className="new-chat-user-list">
+        {users.map((user) => (
+          <button
+            key={user.id}
+            type="button"
+            className="new-chat-user"
+            onClick={() => startConversation(user)}
+          >
+            <span>{user.name}</span>
+            <small>{user.email}</small>
+          </button>
+        ))}
+      </div>
+    )}
+  </div>
+)}
+
     </main>
   )
 }
