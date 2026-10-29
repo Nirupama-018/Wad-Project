@@ -610,28 +610,7 @@ function highlightText(text, query) {
       ),
     )
   }
-  function markMessagesAsRead(messages) {
-  const socket = socketRef.current
-
-  if (
-    !socket?.connected ||
-    document.visibilityState !== 'visible'
-  ) {
-    return
-  }
-
-  for (const item of messages) {
-    if (
-      item.sender === 'them' &&
-      item.id &&
-      item.status !== 'read'
-    ) {
-      socket.emit('message:read', {
-        messageId: String(item.id),
-      })
-    }
-  }
-}
+  markMessagesAsRead()
   const filteredMessages = useMemo(() => {
   const query = messageSearch.trim().toLowerCase()
   const messages = selectedConversation?.messages ?? []
