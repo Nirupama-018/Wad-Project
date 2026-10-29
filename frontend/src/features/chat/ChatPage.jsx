@@ -267,12 +267,26 @@ useEffect(() => {
 }))
 
       setConversations((current) =>
-        current.map((conversation) =>
-          conversation.id === selectedId
-            ? { ...conversation, messages }
-            : conversation,
-        ),
-      )
+  current.map((conversation) => {
+    if (String(conversation.id) !== String(selectedId)) {
+      return conversation
+    }
+
+    // Merge history with messages already received live.
+    const merged = new Map()
+
+    for (const item of [...messages, ...conversation.messages]) {
+      merged.set(String(item.id), item)
+    }
+
+    return {
+      ...conversation,
+      messages: Array.from(merged.values()).sort(
+        (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+      ),
+    }
+  }),
+)
     } catch (err) {
       if (!cancelled) {
         setMessageError(err.message || 'Could not load message history.')
