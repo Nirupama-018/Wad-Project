@@ -216,7 +216,32 @@ useEffect(() => {
           : [],
       }))
 
-      setConversations(list)
+     setConversations((previous) =>
+  list.map((conversation) => {
+    const existing = previous.find(
+      (item) => String(item.id) === String(conversation.id),
+    )
+
+    if (!existing) return conversation
+
+    const mergedMessages = new Map()
+
+    for (const item of [
+      ...conversation.messages,
+      ...existing.messages,
+    ]) {
+      mergedMessages.set(String(item.id), item)
+    }
+
+    return {
+      ...conversation,
+      ...existing,
+      messages: Array.from(mergedMessages.values()).sort(
+        (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+      ),
+    }
+  }),
+)
       setSelectedId((currentId) =>
         list.some((item) => item.id === currentId)
           ? currentId
