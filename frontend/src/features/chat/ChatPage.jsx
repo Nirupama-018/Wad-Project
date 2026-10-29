@@ -194,15 +194,7 @@ function handlePresenceSnapshot(snapshot) {
 function handlePresenceUpdate(user) {
   applyPresence(user);
 }
-  function updateUserPresence(userId, status) {
-  setConversations((previous) =>
-    previous.map((conversation) =>
-      String(conversation.otherUserId) === String(userId)
-        ? { ...conversation, status }
-        : conversation,
-    ),
-  )
-}
+  
 
   socket.on('connect_error', (error) => {
     console.error('Socket connection failed:', error.message)
@@ -232,7 +224,7 @@ activityEvents.forEach(event => {
 
 document.addEventListener('visibilitychange', reportActivity)
 
-  socketRef.current = socket
+  
 
   return () => {
     socket.off('message:new', handleNewMessage)
