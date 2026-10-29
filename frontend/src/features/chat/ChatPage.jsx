@@ -64,6 +64,9 @@ const [currentUserId, setCurrentUserId] = useState('')
 const socketRef = useRef(null)
 const selectedIdRef = useRef(selectedId)
 selectedIdRef.current = selectedId
+const messageAreaRef = useRef(null)
+const latestMessageRef = useRef(null)
+const presenceMapRef = useRef(new Map())
 
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === selectedId,
@@ -97,11 +100,15 @@ useEffect(() => {
 useEffect(() => {
   if (!currentUserId) return
 
-  const socket = io('http://localhost:5000', {
-    withCredentials: true,
-  })
+  const socket = io(import.meta.env.VITE_API_URL ?? 'http://localhost:5000', {
+  withCredentials: true,
+})
 
-  socketRef.current = socket
+socketRef.current = socket
+
+// temporary debug logs, remove once it works
+socket.on('connect', () => console.log('connected', socket.id))
+socket.onAny((event, ...args) => console.log('SOCKET EVENT', event, args))
 
   function handleNewMessage(item) {
     const conversationId = String(item.conversationId)
@@ -162,6 +169,39 @@ useEffect(() => {
       })),
     )
   }
+  
+function applyPresence(user) {
+  const userId = String(user.userId ?? user.id ?? user._id ?? '')
+  const status = user.status
+
+  if (!userId || !['online', 'offline', 'away'].includes(status)) return
+
+  presenceMapRef.current.set(userId, status)
+
+  setConversations(previous =>
+    previous.map(conversation =>
+      String(conversation.otherUserId) === userId
+        ? { ...conversation, status }
+        : conversation
+    )
+  )
+}
+
+
+function handlePresenceSnapshot(snapshot) {
+  console.log('PRESENCE SNAPSHOT DATA:', snapshot)
+
+  for (const user of snapshot.users ?? []) {
+    console.log('APPLYING SNAPSHOT USER:', user.userId, user.status)
+    applyPresence(user)
+  }
+}
+
+function handlePresenceUpdate(user) {
+  console.log('PRESENCE UPDATE DATA:', user)
+  applyPresence(user)
+}
+  
 
   socket.on('connect_error', (error) => {
     console.error('Socket connection failed:', error.message)
@@ -169,12 +209,40 @@ useEffect(() => {
 
   socket.on('message:new', handleNewMessage)
   socket.on('message:status', handleMessageStatus)
+  socket.on('presence:snapshot', handlePresenceSnapshot)
+socket.on('presence:update', handlePresenceUpdate)
+function reportActivity() {
+  if (document.visibilityState === 'visible') {
+    socket.emit('presence:activity', { isVisible: true })
+  }
+}
 
-  socketRef.current = socket
+const activityEvents = [
+  'pointerdown',
+  'keydown',
+  'mousemove',
+  'scroll',
+  'touchstart',
+]
+
+activityEvents.forEach(event => {
+  document.addEventListener(event, reportActivity, { passive: true })
+})
+
+document.addEventListener('visibilitychange', reportActivity)
+
+  
 
   return () => {
     socket.off('message:new', handleNewMessage)
     socket.off('message:status', handleMessageStatus)
+    socket.off('presence:snapshot', handlePresenceSnapshot)
+socket.off('presence:update', handlePresenceUpdate)
+activityEvents.forEach(event => {
+    document.removeEventListener(event, reportActivity)
+  })
+
+  document.removeEventListener('visibilitychange', reportActivity)
     socket.disconnect()
 
     if (socketRef.current === socket) {
@@ -184,17 +252,30 @@ useEffect(() => {
 }, [currentUserId])
 useEffect(() => {
   let cancelled = false
-
+  if (!currentUserId) return
   async function loadConversations() {
     setIsLoadingConversations(true)
     setConversationError('')
 
     try {
       const data = await apiRequest('/api/conversations')
+      console.log(
+  'CONVERSATION USERS:',
+  (data.conversations ?? []).map(c => ({
+    conversationId: c.conversationId,
+    otherUser: c.otherUser,
+    otherUserId: c.otherUser?.id ?? c.otherUser?._id
+  }))
+)
       if (cancelled) return
 
       const list = (data.conversations ?? []).map((item) => ({
         id: item.conversationId,
+        otherUserId: String(item.otherUser?.userId ?? ''),
+status: presenceMapRef.current.get(
+  String(item.otherUser?.userId ?? '')
+) ?? 'offline',
+
         name: item.otherUser?.name ?? 'Unknown user',
         initials: (item.otherUser?.name ?? 'U')
           .split(' ')
@@ -207,24 +288,41 @@ useEffect(() => {
         status: 'offline',
         unread: 0,
         messages: item.lastMessage
-          ? [{
-              id: item.lastMessage.messageId ?? item.lastMessage._id,
-              text: item.lastMessage.content ?? item.lastMessage.text ?? '',
-              sender: 'them',
-              timestamp: item.lastMessageAt
-                ? new Date(item.lastMessageAt)
-                : new Date(),
-              status: 'sent',
-              replyTo: null,
-            }]
-          : [],
-      }))
+  ? [{
+      id: String(
+        item.lastMessage.messageId ??
+        item.lastMessage._id ??
+        item.lastMessage.id
+      ),
+      text: item.lastMessage.content ?? item.lastMessage.text ?? '',
+      sender:
+        String(item.lastMessage.senderId) === String(currentUserId)
+          ? 'me'
+          : 'them',
+      timestamp:
+        item.lastMessage.timestamp ??
+        item.lastMessage.createdAt ??
+        item.lastMessageAt ??
+        new Date(),
+      status: item.lastMessage.status ?? 'sent',
+      replyTo: null,
+    }]
+  : [],
+      })) 
 
      setConversations((previous) =>
   list.map((conversation) => {
     const existing = previous.find(
       (item) => String(item.id) === String(conversation.id),
     )
+
+    console.log(
+  'MAPPED CONVERSATIONS:',
+  list.map((c) => ({
+    name: c.name,
+    otherUserId: c.otherUserId,
+  }))
+)
 
     if (!existing) return conversation
 
@@ -267,11 +365,11 @@ useEffect(() => {
   return () => {
     cancelled = true
   }
-}, [])
+}, [currentUserId])
 
 
 useEffect(() => {
-  if (!selectedId) return
+  if (!selectedId || !currentUserId) return
 
   let cancelled = false
 
@@ -283,7 +381,7 @@ useEffect(() => {
       const data = await apiRequest(
         `/api/conversations/${selectedId}/messages?limit=30`,
       )
-
+      console.log('FULL API RESPONSE:', data)
       if (cancelled) return
 
       const messages = (data.messages ?? []).map((item) => ({
@@ -331,6 +429,15 @@ useEffect(() => {
     cancelled = true
   }
 }, [selectedId, currentUserId])
+
+useEffect(() => {
+  if (!selectedId) return
+
+  latestMessageRef.current?.scrollIntoView({
+    behavior: 'auto',
+    block: 'end',
+  })
+}, [selectedId, selectedConversation?.messages.length])
 
 
 function highlightText(text, query) {
@@ -671,7 +778,7 @@ function replyToMessage(item) {
     </button>
   </div>
 )}
-            <div className="message-area">
+            <div className="message-area" ref={messageAreaRef}>
              
 
              
@@ -691,7 +798,12 @@ function replyToMessage(item) {
       )}
 
       <div
-        className={`message-row ${item.sender === 'me' ? 'sent' : 'received'}`}
+  ref={
+    index === filteredMessages.length - 1
+      ? latestMessageRef
+      : null
+  }
+  className={`message-row ${item.sender === 'me' ? 'sent' : 'received'}`}
         onContextMenu={(event) => {
           event.preventDefault()
           setContextMenu({
