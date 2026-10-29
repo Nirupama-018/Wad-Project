@@ -3,7 +3,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("node:crypto");
-const { Resend } = require("resend");
+const nodemailer = require("nodemailer");
 const rateLimit = require("express-rate-limit");
 const User = require("../../../database/src/models/User");
 
@@ -58,34 +58,40 @@ function hashOtp(otp) {
 }
 
 async function sendOtpEmail(user, otp) {
-  const { RESEND_API_KEY, RESEND_FROM } = process.env;
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
 
-  if (!RESEND_API_KEY || !RESEND_FROM) {
-    throw new Error("Resend email configuration is missing.");
-  }
-
-  const resend = new Resend(RESEND_API_KEY);
-
-  const { data, error } = await resend.emails.send({
-    from: RESEND_FROM,
-    to: user.email,
-    subject: "Your Wavelength verification code",
-    text: `Your Wavelength verification code is ${otp}. It expires in 10 minutes.`,
+  console.log("[SMTP CONFIG CHECK]", {
+    host: Boolean(SMTP_HOST),
+    port: Boolean(SMTP_PORT),
+    user: Boolean(SMTP_USER),
+    pass: Boolean(SMTP_PASS),
+    from: Boolean(SMTP_FROM),
+    nodeEnv: process.env.NODE_ENV,
   });
 
-  if (error) {
-    console.error("[RESEND EMAIL ERROR]", {
-      name: error.name,
-      message: error.message,
-      statusCode: error.statusCode,
+  if (SMTP_HOST && SMTP_USER && SMTP_PASS && SMTP_FROM) {
+    const transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: Number(SMTP_PORT) || 587,
+      secure: Number(SMTP_PORT) === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
     });
 
-    throw new Error("Resend failed to send the verification email.");
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: user.email,
+      subject: "Your Wavelength verification code",
+      text: `Your Wavelength verification code is ${otp}. It expires in 10 minutes.`,
+    });
+    return;
   }
 
-  console.log("[RESEND EMAIL SENT]", {
-    emailId: data?.id,
-  });
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[DEV ONLY] OTP for ${user.email}: ${otp}`);
+    return;
+  }
+
+  throw new Error("Email delivery is not configured.");
 }
 
 async function issueOtp(user) {
