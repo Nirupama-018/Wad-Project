@@ -60,6 +60,15 @@ function hashOtp(otp) {
 async function sendOtpEmail(user, otp) {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
 
+  console.log("[SMTP CONFIG CHECK]", {
+    host: Boolean(SMTP_HOST),
+    port: Boolean(SMTP_PORT),
+    user: Boolean(SMTP_USER),
+    pass: Boolean(SMTP_PASS),
+    from: Boolean(SMTP_FROM),
+    nodeEnv: process.env.NODE_ENV,
+  });
+
   if (SMTP_HOST && SMTP_USER && SMTP_PASS && SMTP_FROM) {
     const transporter = nodemailer.createTransport({
       host: SMTP_HOST,
