@@ -107,6 +107,10 @@ useEffect(() => {
     const conversationId = String(item.conversationId)
     const messageId = String(item.messageId ?? item._id ?? item.id)
     const isOpen = conversationId === String(selectedIdRef.current)
+    console.log('LIVE CHECK', {
+  receivedConversationId: conversationId,
+  openConversationId: String(selectedIdRef.current),
+})
 
     const incoming = {
       id: messageId,
