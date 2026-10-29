@@ -186,6 +186,7 @@ useEffect(() => {
 
 socketRef.current = socket
 
+
 // temporary debug logs, remove once it works
 socket.on('connect', () => console.log('connected', socket.id))
 socket.onAny((event, ...args) => console.log('SOCKET EVENT', event, args))
@@ -210,31 +211,50 @@ socket.onAny((event, ...args) => console.log('SOCKET EVENT', event, args))
 
     console.log('LIVE MESSAGE:', conversationId, 'OPEN:', selectedIdRef.current)
 
-    setConversations((previous) =>
-      previous.map((conversation) => {
-        if (String(conversation.id) !== conversationId) {
-          return conversation
-        }
+    setConversations((previous) => {
+  const updated = previous.map((conversation) => {
+    if (String(conversation.id) !== conversationId) {
+      return conversation
+    }
 
-        if (conversation.messages.some((m) => String(m.id) === messageId)) {
-          return conversation
-        }
-
-        return {
-          ...conversation,
-          messages: [...conversation.messages, incoming],
-          unread: isOpen ? 0 : conversation.unread + 1,
-        }
-      }),
+    const alreadyExists = conversation.messages.some(
+      (m) => String(m.id) === messageId,
     )
 
-    if (incoming.sender === 'them') {
-      socket.emit('message:delivered', { messageId })
-
-      if (isOpen) {
-        socket.emit('message:read', { messageId })
-      }
+    if (alreadyExists) {
+      return conversation
     }
+
+    return {
+      ...conversation,
+      lastMessage: {
+        content: incoming.text,
+        timestamp: incoming.timestamp,
+        senderId: item.senderId,
+      },
+      messages: [...conversation.messages, incoming],
+      unread: isOpen ? 0 : (conversation.unread || 0) + 1,
+    }
+  })
+
+  const index = updated.findIndex(
+    (conversation) => String(conversation.id) === conversationId,
+  )
+
+  if (index <= 0) {
+    return updated
+  }
+
+  const [activeConversation] = updated.splice(index, 1)
+  return [activeConversation, ...updated]
+})
+    if (incoming.sender === 'them') {
+  socket.emit('message:delivered', { messageId })
+
+  if (isOpen && document.visibilityState === 'visible') {
+    socket.emit('message:read', { messageId })
+  }
+}
   }
 
 
@@ -395,19 +415,12 @@ status: presenceMapRef.current.get(
   : [],
       })) 
 
-     setConversations((previous) =>
-  list.map((conversation) => {
+     
+setConversations((previous) => {
+  const mergedList = list.map((conversation) => {
     const existing = previous.find(
       (item) => String(item.id) === String(conversation.id),
     )
-
-    console.log(
-  'MAPPED CONVERSATIONS:',
-  list.map((c) => ({
-    name: c.name,
-    otherUserId: c.otherUserId,
-  }))
-)
 
     if (!existing) return conversation
 
@@ -420,15 +433,41 @@ status: presenceMapRef.current.get(
       mergedMessages.set(String(item.id), item)
     }
 
+    const messages = Array.from(mergedMessages.values()).sort(
+      (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+    )
+
     return {
       ...conversation,
       ...existing,
-      messages: Array.from(mergedMessages.values()).sort(
-        (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
-      ),
+      messages,
     }
-  }),
-)
+  })
+
+  const getLatestTimestamp = (conversation) => {
+    const latestMessage = conversation.messages?.reduce(
+      (latest, message) =>
+        !latest || new Date(message.timestamp) > new Date(latest.timestamp)
+          ? message
+          : latest,
+      null,
+    )
+
+    return (
+      latestMessage?.timestamp ??
+      conversation.lastMessage?.timestamp ??
+      conversation.lastMessage?.createdAt ??
+      0
+    )
+  }
+
+  return mergedList.sort(
+    (a, b) =>
+      new Date(getLatestTimestamp(b)).getTime() -
+      new Date(getLatestTimestamp(a)).getTime(),
+  )
+})
+
       setSelectedId((currentId) =>
         list.some((item) => item.id === currentId)
           ? currentId
@@ -478,13 +517,12 @@ useEffect(() => {
   replyTo: null,
 }))
 
-      setConversations((current) =>
+     setConversations((current) =>
   current.map((conversation) => {
     if (String(conversation.id) !== String(selectedId)) {
       return conversation
     }
 
-    // Merge history with messages already received live.
     const merged = new Map()
 
     for (const item of [...messages, ...conversation.messages]) {
@@ -499,6 +537,13 @@ useEffect(() => {
     }
   }),
 )
+if (
+  !cancelled &&
+  String(selectedIdRef.current) === String(selectedId) &&
+  document.visibilityState === 'visible'
+) {
+  markMessagesAsRead(messages)
+}
     } catch (err) {
       if (!cancelled) {
         setMessageError(err.message || 'Could not load message history.')
@@ -565,6 +610,28 @@ function highlightText(text, query) {
       ),
     )
   }
+  function markMessagesAsRead(messages) {
+  const socket = socketRef.current
+
+  if (
+    !socket?.connected ||
+    document.visibilityState !== 'visible'
+  ) {
+    return
+  }
+
+  for (const item of messages) {
+    if (
+      item.sender === 'them' &&
+      item.id &&
+      item.status !== 'read'
+    ) {
+      socket.emit('message:read', {
+        messageId: String(item.id),
+      })
+    }
+  }
+}
   const filteredMessages = useMemo(() => {
   const query = messageSearch.trim().toLowerCase()
   const messages = selectedConversation?.messages ?? []
