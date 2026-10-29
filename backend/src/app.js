@@ -8,6 +8,7 @@ const conversationRoutes = require("./routes/conversationRoutes");
 const scheduledMessageRoutes = require("./routes/scheduledMessageRoutes");
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(helmet());
 
