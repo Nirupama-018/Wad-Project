@@ -62,6 +62,8 @@ const [userSearch, setUserSearch] = useState('')
 const [messageError, setMessageError] = useState('')
 const [currentUserId, setCurrentUserId] = useState('')
 const socketRef = useRef(null)
+const selectedIdRef = useRef(selectedId)
+selectedIdRef.current = selectedId
 
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === selectedId,
@@ -101,93 +103,81 @@ useEffect(() => {
 
   socketRef.current = socket
 
-  socket.on('connect_error', (err) => {
-    setMessageError(
-      err.message === 'AUTHENTICATION_REQUIRED' ||
-      err.message === 'INVALID_SESSION'
-        ? 'Your session has expired. Please log in again.'
-        : 'Could not connect to the messaging server.',
-    )
-  })
-
-  return () => {
-    socket.disconnect()
-    socketRef.current = null
-  }
-}, [currentUserId])
-
-useEffect(() => {
-  const socket = socketRef.current
-
-  if (!socket || !currentUserId) return
-
   function handleNewMessage(item) {
-  const conversationId = String(item.conversationId)
-  const messageId = String(item.messageId ?? item._id ?? item.id)
-  const isOpen = conversationId === String(selectedId)
+    const conversationId = String(item.conversationId)
+    const messageId = String(item.messageId ?? item._id ?? item.id)
+    const isOpen = conversationId === String(selectedIdRef.current)
 
-  const newMessage = {
-    id: messageId,
-    text: item.content ?? item.text ?? '',
-    sender: String(item.senderId) === currentUserId ? 'me' : 'them',
-    timestamp: item.timestamp ?? item.createdAt ?? new Date().toISOString(),
-    status: item.status ?? 'sent',
-    replyTo: null,
-  }
+    const incoming = {
+      id: messageId,
+      text: item.content ?? item.text ?? '',
+      sender: String(item.senderId) === String(currentUserId) ? 'me' : 'them',
+      timestamp: item.timestamp ?? item.createdAt ?? new Date().toISOString(),
+      status: item.status ?? 'sent',
+      replyTo: null,
+    }
 
-  setConversations((current) =>
-    current.map((conversation) => {
-      if (String(conversation.id) !== conversationId) {
-        return conversation
+    console.log('LIVE MESSAGE:', conversationId, 'OPEN:', selectedIdRef.current)
+
+    setConversations((previous) =>
+      previous.map((conversation) => {
+        if (String(conversation.id) !== conversationId) {
+          return conversation
+        }
+
+        if (conversation.messages.some((m) => String(m.id) === messageId)) {
+          return conversation
+        }
+
+        return {
+          ...conversation,
+          messages: [...conversation.messages, incoming],
+          unread: isOpen ? 0 : conversation.unread + 1,
+        }
+      }),
+    )
+
+    if (incoming.sender === 'them') {
+      socket.emit('message:delivered', { messageId })
+
+      if (isOpen) {
+        socket.emit('message:read', { messageId })
       }
-
-      // Prevent duplicate messages.
-      if (
-        conversation.messages.some(
-          (existing) => String(existing.id) === messageId,
-        )
-      ) {
-        return conversation
-      }
-
-      return {
-        ...conversation,
-        unread: isOpen ? 0 : conversation.unread + 1,
-        messages: [...conversation.messages, newMessage],
-      }
-    }),
-  )
-
-  if (newMessage.sender === 'them') {
-    socket.emit('message:delivered', { messageId })
-
-    if (isOpen) {
-      socket.emit('message:read', { messageId })
     }
   }
-}
 
   function handleMessageStatus(receipt) {
-    setConversations((current) =>
-      current.map((conversation) => ({
+    setConversations((previous) =>
+      previous.map((conversation) => ({
         ...conversation,
-        messages: conversation.messages.map((item) =>
-          item.id === String(receipt.messageId)
-            ? { ...item, status: receipt.status }
-            : item,
+        messages: conversation.messages.map((m) =>
+          String(m.id) === String(receipt.messageId)
+            ? { ...m, status: receipt.status }
+            : m,
         ),
       })),
     )
   }
 
-socket.on('message:new', handleNewMessage)
+  socket.on('connect_error', (error) => {
+    console.error('Socket connection failed:', error.message)
+  })
+
+  socket.on('message:new', handleNewMessage)
   socket.on('message:status', handleMessageStatus)
+
+  socketRef.current = socket
 
   return () => {
     socket.off('message:new', handleNewMessage)
     socket.off('message:status', handleMessageStatus)
+    socket.disconnect()
+
+    if (socketRef.current === socket) {
+      socketRef.current = null
+    }
   }
-}, [currentUserId, selectedId])
+}, [currentUserId])
 useEffect(() => {
   let cancelled = false
 
@@ -357,6 +347,7 @@ function sendMessage(event) {
 
   const text = message.trim()
   const socket = socketRef.current
+  
 
   if (!text || !selectedConversation) return
 
