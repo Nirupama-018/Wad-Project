@@ -32,8 +32,12 @@ const {
 } = require("../../realtime/src");
 
 const PORT = Number(process.env.PORT) || 5000;
-const FRONTEND_ORIGIN =
-  process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+const FRONTEND_ORIGINS = (
+  process.env.FRONTEND_ORIGIN || "http://localhost:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 function getSessionToken(cookieHeader = "") {
   const cookie = cookieHeader
@@ -61,10 +65,11 @@ async function startServer() {
     const httpServer = http.createServer(app);
 
     const io = new Server(httpServer, {
-      cors: {
-        origin: FRONTEND_ORIGIN,
+    cors: {
+        origin: FRONTEND_ORIGINS,
         credentials: true,
-      },
+        methods: ["GET", "POST"],
+    },
     });
 
     // Authenticate every socket using the existing HTTP-only JWT cookie.
@@ -146,8 +151,8 @@ async function startServer() {
     const workerTimer = setInterval(runScheduledWorker, 5000);
     void runScheduledWorker();
 
-    httpServer.listen(PORT, () => {
-      console.log(`Backend listening on http://localhost:${PORT}`);
+    httpServer.listen(PORT, "0.0.0.0", () => {
+        console.log(`Backend listening on port ${PORT}`);
     });
 
     let shuttingDown = false;
