@@ -277,21 +277,7 @@ socket.onAny((event, ...args) => console.log('SOCKET EVENT', event, args))
 
   if (index <= 0) {
     return updated
-<<<<<<< HEAD
-  }
 
-  const [activeConversation] = updated.splice(index, 1)
-  return [activeConversation, ...updated]
-})
-    if (incoming.sender === 'them') {
-  socket.emit('message:delivered', { messageId })
-
-  if (isOpen && document.visibilityState === 'visible') {
-    socket.emit('message:read', { messageId })
-  }
-}
-=======
->>>>>>> 63d65e6 (Scheduled msgs)
   }
 
   const [activeConversation] = updated.splice(index, 1)
@@ -464,12 +450,7 @@ status: presenceMapRef.current.get(
   : [],
       })) 
 
-<<<<<<< HEAD
-     
-setConversations((previous) => {
-=======
      setConversations((previous) => {
->>>>>>> 63d65e6 (Scheduled msgs)
   const mergedList = list.map((conversation) => {
     const existing = previous.find(
       (item) => String(item.id) === String(conversation.id),
@@ -521,10 +502,6 @@ setConversations((previous) => {
   )
 })
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 63d65e6 (Scheduled msgs)
       setSelectedId((currentId) =>
         list.some((item) => item.id === currentId)
           ? currentId
@@ -594,10 +571,7 @@ useEffect(() => {
     }
   }),
 )
-<<<<<<< HEAD
-=======
 
->>>>>>> 63d65e6 (Scheduled msgs)
 if (
   !cancelled &&
   String(selectedIdRef.current) === String(selectedId) &&
@@ -671,7 +645,7 @@ function highlightText(text, query) {
       ),
     )
   }
-  markMessagesAsRead()
+  
   const filteredMessages = useMemo(() => {
   const query = messageSearch.trim().toLowerCase()
   const messages = selectedConversation?.messages ?? []
