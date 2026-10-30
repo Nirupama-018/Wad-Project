@@ -351,16 +351,34 @@ function registerMessagingHandlers(io, { messageService, Conversation }) {
           userId
         );
 
-        // Never accept senderId from the client.
         const message = await messageService.saveMessage({
-          conversationId: payload.conversationId,
-          senderId: userId,
-          content: payload.content,
-          clientMessageId: payload.clientMessageId,
-        });
+  conversationId: payload.conversationId,
+  senderId: userId,
+  content: payload.content,
+  clientMessageId: payload.clientMessageId,
+});
 
-        // Persist first, then deliver to the recipient's user room.
-        deliverMessage({ message, recipientId });
+// When a user replies, mark their previously received messages as read.
+try {
+  const readReceipts =
+    await messageService.markConversationMessagesAsRead({
+      conversationId: payload.conversationId,
+      userId,
+    });
+
+  // Notify the original senders so their ticks update immediately.
+  for (const receipt of readReceipts) {
+    io.to(`user:${receipt.senderId}`).emit("message:status", receipt);
+  }
+} catch (error) {
+  console.error(
+    "Could not automatically mark previous messages as read:",
+    error.message
+  );
+}
+
+// Deliver the newly saved reply.
+deliverMessage({ message, recipientId });
 
         reply({
           success: true,
