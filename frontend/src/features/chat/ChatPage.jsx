@@ -57,6 +57,8 @@ const [userSearch, setUserSearch] = useState('')
   const [scheduledText, setScheduledText] = useState('')
   const [scheduledTime, setScheduledTime] = useState('')
   const [scheduledMessages, setScheduledMessages] = useState([])
+  const [scheduleError, setScheduleError] = useState('')
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false)
   const [replyingTo, setReplyingTo] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
@@ -150,6 +152,38 @@ const startConversation = async (user) => {
     alert(error.message || 'Could not start conversation.')
   }
 }
+
+const markMessagesAsRead = (messages = []) => {
+  const socket = socketRef.current
+
+  if (!socket?.connected || !messages.length || !currentUserId) return
+
+  messages.forEach((message) => {
+    const isIncoming = message.sender === 'them'
+    const isUnread = message.status !== 'read'
+
+    if (isIncoming && isUnread && message.id) {
+      socket.emit('message:read', {
+        messageId: message.id,
+      })
+    }
+  })
+}
+
+async function loadScheduledMessages() {
+  try {
+    const data = await apiRequest('/api/scheduled-messages?status=pending')
+    setScheduledMessages(data.scheduledMessages || [])
+  } catch (error) {
+    console.error('Failed to load scheduled messages:', error)
+  }
+}
+useEffect(() => {
+  if (currentUserId) {
+    loadScheduledMessages()
+  }
+}, [currentUserId])
+
 // Fetch the logged-in user's ID.
 useEffect(() => {
   let cancelled = false
@@ -180,7 +214,7 @@ useEffect(() => {
 useEffect(() => {
   if (!currentUserId) return
 
-  const socket = io(import.meta.env.VITE_API_URL ?? 'http://localhost:5000', {
+  const socket = io(window.location.origin, {
   withCredentials: true,
 })
 
@@ -243,6 +277,7 @@ socket.onAny((event, ...args) => console.log('SOCKET EVENT', event, args))
 
   if (index <= 0) {
     return updated
+<<<<<<< HEAD
   }
 
   const [activeConversation] = updated.splice(index, 1)
@@ -255,8 +290,22 @@ socket.onAny((event, ...args) => console.log('SOCKET EVENT', event, args))
     socket.emit('message:read', { messageId })
   }
 }
+=======
+>>>>>>> 63d65e6 (Scheduled msgs)
   }
 
+  const [activeConversation] = updated.splice(index, 1)
+  return [activeConversation, ...updated]
+})
+
+    if (incoming.sender === 'them') {
+  socket.emit('message:delivered', { messageId })
+
+  if (isOpen && document.visibilityState === 'visible') {
+    socket.emit('message:read', { messageId })
+  }
+}
+  }
 
 
 
@@ -415,8 +464,12 @@ status: presenceMapRef.current.get(
   : [],
       })) 
 
+<<<<<<< HEAD
      
 setConversations((previous) => {
+=======
+     setConversations((previous) => {
+>>>>>>> 63d65e6 (Scheduled msgs)
   const mergedList = list.map((conversation) => {
     const existing = previous.find(
       (item) => String(item.id) === String(conversation.id),
@@ -468,6 +521,10 @@ setConversations((previous) => {
   )
 })
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 63d65e6 (Scheduled msgs)
       setSelectedId((currentId) =>
         list.some((item) => item.id === currentId)
           ? currentId
@@ -537,6 +594,10 @@ useEffect(() => {
     }
   }),
 )
+<<<<<<< HEAD
+=======
+
+>>>>>>> 63d65e6 (Scheduled msgs)
 if (
   !cancelled &&
   String(selectedIdRef.current) === String(selectedId) &&
@@ -712,27 +773,60 @@ function replyToMessage(item) {
   setContextMenu(null)
 }
 
-    function scheduleMessage(event) {
-        event.preventDefault()
+async function scheduleMessage(event) {
+  event.preventDefault()
 
-        if (!scheduledText.trim() || !scheduledTime) return
+  if (!scheduledText.trim() || !scheduledTime || !selectedId) return
 
-        const scheduledDate = new Date(scheduledTime)
+  const scheduledDate = new Date(scheduledTime)
 
-        setScheduledMessages((current) => [
-            ...current,
-            {
-            id: Date.now(),
-            conversationName: selectedConversation.name,
-            text: scheduledText.trim(),
-            time: scheduledDate.toLocaleString(),
-            },
-        ])
+  if (scheduledDate <= new Date()) {
+    setScheduleError('Please select a future date and time.')
+    return
+  }
 
-        setScheduledText('')
-        setScheduledTime('')
-        setShowSchedule(false)
-    }
+  setIsSavingSchedule(true)
+  setScheduleError('')
+
+  try {
+    await apiRequest('/api/scheduled-messages', {
+      method: 'POST',
+      body: JSON.stringify({
+        conversationId: selectedId,
+        content: scheduledText.trim(),
+        scheduledAt: scheduledDate.toISOString(),
+      }),
+    })
+
+    await loadScheduledMessages()
+
+    setScheduledText('')
+    setScheduledTime('')
+    setShowSchedule(false)
+  } catch (error) {
+    setScheduleError(error.message || 'Could not schedule the message.')
+  } finally {
+    setIsSavingSchedule(false)
+  }
+}
+
+async function cancelScheduledMessage(id) {
+  const confirmed = window.confirm(
+    'Are you sure you want to cancel this scheduled message?'
+  )
+
+  if (!confirmed) return
+
+  try {
+    await apiRequest(`/api/scheduled-messages/${id}`, {
+      method: 'DELETE',
+    })
+
+    await loadScheduledMessages()
+  } catch (error) {
+    alert(error.message || 'Could not cancel scheduled message.')
+  }
+}
 
 
 
@@ -1113,16 +1207,37 @@ function replyToMessage(item) {
 </p>
 
               {scheduledMessages.length > 0 && (
-                <div className="scheduled-list">
-                  <strong>Scheduled in this demo</strong>
-                  {scheduledMessages.map((item) => (
-                    <p key={item.id}>
-                      <span>{item.conversationName}: {item.text}</span>
-                      <span>{item.time}</span>
-                    </p>
-                  ))}
-                </div>
-              )}
+  <div className="scheduled-list">
+    <strong>Scheduled messages</strong>
+
+    {scheduledMessages.map((item) => {
+      const conversation = conversations.find(
+        (c) => String(c.id) === String(item.conversationId)
+      )
+
+      return (
+        <div key={item.scheduledMessageId}>
+          <p>
+            <span>
+              To {conversation?.name || 'Conversation'}: {item.content}
+            </span>
+
+            <span>
+              {new Date(item.scheduledAt).toLocaleString()}
+            </span>
+          </p>
+
+          <button
+            type="button"
+            onClick={() => cancelScheduledMessage(item.scheduledMessageId)}
+          >
+            Cancel
+          </button>
+        </div>
+      )
+    })}
+  </div>
+)}
             </div>
           </>
         ) : (
@@ -1174,11 +1289,21 @@ function replyToMessage(item) {
                 required
               />
               <p className="schedule-note">
-                Demo only: this records the scheduled message in the current page. It will not send automatically.
-              </p>
-              <button className="schedule-submit" type="submit">
-                Save scheduled message
-              </button>
+  Your message will be sent automatically at the scheduled time.
+</p>
+
+{scheduleError && (
+  <p className="schedule-note" role="alert">
+    {scheduleError}
+  </p>
+)}
+              <button
+  className="schedule-submit"
+  type="submit"
+  disabled={isSavingSchedule}
+>
+  {isSavingSchedule ? 'Scheduling...' : 'Schedule message'}
+</button>
             </form>
           </section>
         </div>
