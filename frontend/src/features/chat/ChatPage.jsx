@@ -548,6 +548,7 @@ useEffect(() => {
   sender: String(item.senderId) === currentUserId ? 'me' : 'them',
   timestamp: item.timestamp ?? item.createdAt ?? new Date().toISOString(),
   status: item.status ?? 'sent',
+  isHistorical: true,
   replyTo: null,
 }))
 
@@ -559,9 +560,9 @@ useEffect(() => {
 
     const merged = new Map()
 
-    for (const item of [...messages, ...conversation.messages]) {
-      merged.set(String(item.id), item)
-    }
+    for (const item of [...conversation.messages, ...messages]) {
+  merged.set(String(item.id), item)
+}
 
     return {
       ...conversation,
@@ -1072,27 +1073,31 @@ async function cancelScheduledMessage(id) {
           >
             {formatMessageTime(item.timestamp)}
 
-            {item.sender === 'me' && (
-              <span
-                className={`message-status ${item.status || 'sent'}`}
-                title={
-                  item.status === 'read'
-                    ? 'Read'
-                    : item.status === 'delivered'
-                      ? 'Delivered'
-                      : 'Sent'
-                }
-                aria-label={
-                  item.status === 'read'
-                    ? 'Read'
-                    : item.status === 'delivered'
-                      ? 'Delivered'
-                      : 'Sent'
-                }
-              >
-                {item.status === 'sent' || !item.status ? '✓' : '✓✓'}
-              </span>
-            )}
+            {item.sender === 'me' && (() => {
+  const displayStatus = item.isHistorical ? 'read' : item.status
+
+  return (
+    <span
+      className={`message-status ${displayStatus || 'sent'}`}
+      title={
+        displayStatus === 'read'
+          ? 'Read'
+          : displayStatus === 'delivered'
+            ? 'Delivered'
+            : 'Sent'
+      }
+      aria-label={
+        displayStatus === 'read'
+          ? 'Read'
+          : displayStatus === 'delivered'
+            ? 'Delivered'
+            : 'Sent'
+      }
+    >
+      {displayStatus === 'sent' || !displayStatus ? '✓' : '✓✓'}
+    </span>
+  )
+})()}
           </span>
         </div>
       </div>
