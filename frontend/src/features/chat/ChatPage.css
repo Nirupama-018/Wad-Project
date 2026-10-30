@@ -1039,3 +1039,13 @@
   font-size: 14px;
   color: #64748b;
 }
+
+.sidebar {
+  overflow: hidden;
+}
+
+.conversation-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
