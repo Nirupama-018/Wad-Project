@@ -785,19 +785,28 @@ async function scheduleMessage(event) {
 }
 
 async function cancelScheduledMessage(id) {
+  console.log('CANCEL BUTTON CLICKED. ID:', id)
+
   const confirmed = window.confirm(
     'Are you sure you want to cancel this scheduled message?'
   )
 
+  console.log('USER CONFIRMED:', confirmed)
+
   if (!confirmed) return
 
   try {
-    await apiRequest(`/api/scheduled-messages/${id}`, {
+    console.log('SENDING DELETE REQUEST...')
+
+    const response = await apiRequest(`/api/scheduled-messages/${id}`, {
       method: 'DELETE',
     })
 
+    console.log('DELETE RESPONSE:', response)
+
     await loadScheduledMessages()
   } catch (error) {
+    console.error('CANCELLATION FAILED:', error)
     alert(error.message || 'Could not cancel scheduled message.')
   }
 }
