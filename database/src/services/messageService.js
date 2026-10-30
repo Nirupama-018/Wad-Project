@@ -278,6 +278,53 @@ async function updateMessageStatus({
   };
 }
 
+async function markConversationMessagesAsRead({
+  conversationId,
+  userId,
+}) {
+  const conversation = await getAuthorizedConversation(
+    conversationId,
+    userId
+  );
+
+  const userObjectId = toObjectId(userId, "userId");
+
+  // Find unread messages received by the current user.
+  const query = {
+    conversationId: conversation._id,
+    senderId: { $ne: userObjectId },
+    status: { $ne: "read" },
+  };
+
+  const unreadMessages = await Message.find(query)
+    .select("_id senderId")
+    .lean();
+
+  if (unreadMessages.length === 0) {
+    return [];
+  }
+
+  const now = new Date();
+
+  // Persist the read receipts.
+  await Message.updateMany(query, {
+    $set: {
+      status: "read",
+      deliveredAt: now,
+      readAt: now,
+    },
+  });
+
+  return unreadMessages.map((message) => ({
+    messageId: message._id.toString(),
+    conversationId: conversation._id.toString(),
+    senderId: message.senderId.toString(),
+    status: "read",
+    deliveredAt: now,
+    readAt: now,
+  }));
+}
+
 async function scheduleMessage({
   conversationId,
   senderId,
@@ -341,5 +388,6 @@ module.exports = {
   saveMessage,
   getMessageHistory,
   updateMessageStatus,
+  markConversationMessagesAsRead,
   scheduleMessage,
 };
